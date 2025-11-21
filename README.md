@@ -1,6 +1,6 @@
 # Noise Generator for Home Assistant
 
-Noise Generator is a custom integration that synthesizes continuous white, pink, brown, or fully custom noise directly inside Home Assistant. Each profile becomes a media source entry that you can browse from the UI or trigger through automations or scripts, giving you a reliable ambient-noise generator without relying on external services.
+Noise Generator is a custom integration that synthesizes continuous background audio entirely inside Home Assistant. It started as a colored-noise generator (white, pink, brown, custom) and now also includes tonal alarm-like presets and a fully programmable tonal engine. Every profile becomes a Media Source entry, so you can play it from the Media Browser or trigger it via automations.
 
 > Built by **vibe coding** with ChatGPT-assisted development.
 
@@ -8,75 +8,94 @@ Noise Generator is a custom integration that synthesizes continuous white, pink,
 
 ## Features
 
-- Pure Python noise generation—no external APIs or cloud dependencies.
-- Built-in profiles (white, pink, brown) plus unlimited custom “colors”.
-- Per-profile volume and random seed controls to balance or stabilize outputs.
-- Seamless Media Source integration: play from the Media Browser or call `media_player.play_media`.
-- 100% UI-driven config flow for adding, editing, and deleting profiles.
+- Pure Python synthesis – no cloud calls and no uploaded sound files.
+- Built-in **colored noises** (white/pink/brown) plus custom spectral shaping.
+- Built-in **tonal presets** (Gentle Beep, Classic Digital, Mellow Bell, Sunrise Chime, Soft Sweep, Retro Buzzer, Duet Beeps, Warm Drone, Sci-Fi Ping, Pop Chime) plus custom tonal synthesis.
+- Per-profile volume and optional seed for reproducible randomness.
+- One-click playback via the Media Browser, or trigger via `media_player.play_media`.
+- Configurable fully through the UI (add/edit/remove profiles at any time).
 
 ---
 
 ## Installation
 
-### HACS (Recommended)
-1. **Add repository**: In Home Assistant, go to **HACS → Integrations → ⋮ → Custom repositories**, enter the GitHub URL for this repo, and choose **Integration**.
-2. **Install**: After the repo is added, find “Noise Generator” in HACS → Integrations and click **Download**.
-3. **Restart HA** when prompted, then add the integration via **Settings → Devices & Services → Add Integration**.
+### HACS (recommended)
+1. Open **HACS → Integrations → ⋮ → Custom repositories**.
+2. Add `https://github.com/nirnachmani/noise-generator` and choose **Integration**.
+3. Install “Noise Generator” from the HACS list and restart Home Assistant.
+4. Go to **Settings → Devices & Services → Add Integration** and pick **Noise Generator**.
 
-### Manual Installation
+### Manual
 1. Download or clone this repository.
-2. Copy `custom_components/noise_generator/` into your Home Assistant config directory under `custom_components/`.
-3. Restart HA and add the integration from **Settings → Devices & Services**.
+2. Copy `custom_components/noise_generator/` into `/config/custom_components/` on your HA instance.
+3. Restart Home Assistant and add the integration from **Settings → Devices & Services**.
 
 ---
 
 ## Usage
 
-### Initial Setup
-1. Go to **Settings → Devices & Services → Configure (cogwheel icon)**.
-2. Select **Noise Generator**.
-3. Fill out the form: profile name, noise type, volume (0–1), optional seed, and custom parameters if needed.
-4. Submit to create the first profile and entry.
+### Initial setup
+1. Add the integration (see above).
+2. Give your profile a name and choose a variation:
+   - **Colored noises** – white, pink, brown, or custom (opens a second form).
+   - **Tonal noises** – gentle beep, mellow bell, soft sweep, warm drone, or custom tonal (opens a tonal form).
+3. Set the volume (0–1) and optional random seed.
+4. Save. The profile appears immediately under Media → Noise Generator.
 
-### Managing Profiles
-- Navigate to **Settings → Devices & Services → Noise Generator → Configure (cogwheel icon)**.
-- Choose **Add profile**, **Edit profile**, or **Remove profile** as needed.
-- Saving via **Save changes** updates every profile in the entry.
+### Managing profiles
+- Go to **Settings → Devices & Services → Noise Generator → Configure**.
+- Use **Add profile**, **Edit profile**, or **Remove profile**.
+- When editing a custom profile, selecting “custom colored” or “custom tonal” re-opens the tuning form with your saved parameters. Choosing a preset replaces the profile with that preset’s settings.
 
-### Playing Noise
+### Playing noise/tonal sounds
 **Media Browser**
-1. Use the global **Media** panel or a media player’s “Browse media” button.
-2. Open **Noise Generator** and choose a profile to play.
+1. Open **Media** or click “Browse media” on any media player.
+2. Select **Noise Generator**, pick a profile, and choose the target player.
 
-**Automations / Scripts**
-Use the media-source URI for a profile:
+**Automation/script**
 ```yaml
 service: media_player.play_media
 target:
-  entity_id: media_player.living_room
+  entity_id: media_player.bedroom_speaker
 data:
   media:
-    media_content_id: media-source://noise_generator/<profile_name>
+    media_content_id: media-source://noise_generator/<profile_slug>
+    media_content_type: audio/wav
 ```
-Obtain the name by browsing to the profile in the Media Browser or checking the integration’s logs.
+You can copy the `media_content_id` by browsing to the profile in the UI and clicking the “Show code” snippet.
 
-### Custom Noise Parameters
+---
+
+## Custom Parameters
+
+### Colored noise (custom)
 | Parameter | Range | Effect |
 |-----------|-------|--------|
-| **Custom slope (dB/oct)** | –12.0 to +12.0 | Tilts the spectrum. Positive values brighten the noise (more high frequencies); negative values darken it (more low-end energy). |
-| **Custom low cutoff (Hz)** | 1 to 21,800 | High-pass corner frequency. Raising it removes rumble/bass; lower values keep the full spectrum. |
-| **Custom high cutoff (Hz)** | (Low cutoff + 1) to 21,800 | Low-pass corner. Lower settings yield softer, muffled tones; higher values preserve high-end hiss. |
-| **Volume (0–1)** | 0.0 to 1.0 | Scales the generated signal before streaming. Use it to balance profiles; final loudness is still controlled by the media player. |
-| **Random seed** | Any string or integer | Optional deterministic seed so the noise texture is reproducible. Leave blank for natural variation. |
+| **Custom slope (dB/oct)** | –12 to +12 | Positive values brighten the spectrum; negative values emphasize bass. |
+| **Custom low cutoff (Hz)** | 1 to 21,800 | High-pass corner; raise it to remove rumble, lower it for full-range noise. |
+| **Custom high cutoff (Hz)** | (Low + 1) to 21,800 | Low-pass corner; lower values produce softer, muffled noise. |
+| **Volume (0–1)** | 0 to 1 | Scales the generated signal before streaming. |
+| **Random seed** | Any string/int | Optional deterministic seed for repeatable randomness. |
 
-Volume and seed apply to every profile type (built-in or custom), while slope/cutoffs are only shown when “Custom” is selected.
+### Tonal noise (custom)
+| Parameter | Range | Effect |
+|-----------|-------|--------|
+| **Waveform** | sine, triangle, square, saw | Overall character of the tone. |
+| **Base frequency (Hz)** | 100–4000 | Fundamental pitch. |
+| **Harmonic ratio** | 0–5 | Adds a secondary oscillator at `base × ratio` for richer tones. |
+| **Pulse duration (ms)** | 50–4000 | Length of the tone burst before any pause. |
+| **Pause duration (ms)** | 0–3000 | Silence between pulses (0 = continuous). |
+| **Attack (ms)** | 1–1000 | Fade-in time; longer values sound softer. |
+| **Decay (ms)** | 10–4000 | Fade-out time; longer values create bells or drones. |
+
+Volume and seed apply to every profile (colored or tonal). All sounds loop indefinitely until the media player stops them.
 
 ---
 
 ## License
 
-This project is released under the **MIT License**, allowing you to use, modify, and redistribute the integration with minimal restrictions while retaining attribution and disclaiming liability.
+Released under the **MIT License**, so you’re free to use, modify, and redistribute with attribution and the standard liability disclaimer.
 
 ---
 
-Enjoy your bespoke ambient soundscapes!
+Enjoy the hum of rain, the warmth of a mellow bell, or your own custom alarm tones—without leaving Home Assistant!
