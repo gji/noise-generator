@@ -8,23 +8,40 @@ import math
 from typing import Any
 
 from .const import (
+    COLOR_NOISE_SUBTYPES,
     CONF_CUSTOM_HIGH_CUTOFF,
     CONF_CUSTOM_LOW_CUTOFF,
     CONF_CUSTOM_SLOPE,
     CONF_PROFILE_PARAMETERS,
+    CONF_PROFILE_SUBTYPE,
     CONF_PROFILE_TYPE,
     CONF_SEED,
+    CONF_TONAL_ATTACK,
+    CONF_TONAL_BASE_FREQUENCY,
+    CONF_TONAL_DECAY,
+    CONF_TONAL_PAUSE_DURATION,
+    CONF_TONAL_PULSE_DURATION,
+    CONF_TONAL_SECONDARY_RATIO,
+    CONF_TONAL_WAVEFORM,
     CONF_VOLUME,
-    DEFAULT_VOLUME,
+    CUSTOM_HIGH_CUTOFF_MAX,
+    CUSTOM_LOW_CUTOFF_MIN,
+    CUSTOM_SLOPE_MAX,
+    CUSTOM_SLOPE_MIN,
     DEFAULT_CUSTOM_HIGH_CUTOFF,
     DEFAULT_CUSTOM_LOW_CUTOFF,
     DEFAULT_CUSTOM_SLOPE,
+    DEFAULT_PROFILE_SUBTYPE,
+    DEFAULT_PROFILE_TYPE,
+    DEFAULT_TONAL_SUBTYPE,
+    DEFAULT_VOLUME,
     PROFILE_TYPES,
     SAMPLE_RATE,
-    CUSTOM_SLOPE_MIN,
-    CUSTOM_SLOPE_MAX,
-    CUSTOM_LOW_CUTOFF_MIN,
-    CUSTOM_HIGH_CUTOFF_MAX,
+    TONAL_CUSTOM,
+    TONAL_PRESET_PARAMETERS,
+    TONAL_SUBTYPES,
+    TONAL_WAVEFORMS,
+    normalize_subtype,
 )
 
 class UnknownNoiseTypeError(ValueError):
@@ -60,26 +77,26 @@ def _alpha_highpass(cutoff_hz: float) -> float:
 
 
 class NoiseGenerator:
-    """Generate PCM frames for a specific noise profile."""
+    """Generate PCM frames for a specific colored noise profile."""
 
     def __init__(
         self,
-        noise_type: str,
+        noise_subtype: str,
         volume: float,
         seed: Any | None = None,
         *,
         custom_params: dict[str, Any] | None = None,
     ) -> None:
-        if noise_type not in PROFILE_TYPES:
-            raise UnknownNoiseTypeError(noise_type)
+        if noise_subtype not in COLOR_NOISE_SUBTYPES:
+            raise UnknownNoiseTypeError(noise_subtype)
 
-        self.noise_type = noise_type
+        self.noise_type = noise_subtype
         self.volume = _clamp(float(volume), 0.0, 1.0)
         self._rng = random.Random(seed)
         self._brown_value = 0.0
         self._pink_state = [0.0] * 7
         self._custom_state: dict[str, float] | None = None
-        if noise_type == "custom":
+        if self.noise_type == "custom":
             params = custom_params or {}
             slope = _clamp(
                 float(params.get(CONF_CUSTOM_SLOPE, DEFAULT_CUSTOM_SLOPE)),
@@ -218,9 +235,26 @@ def build_wav_header(sample_rate: int = SAMPLE_RATE) -> bytes:
 def coerce_profile(raw_profile: dict[str, Any]) -> dict[str, Any]:
     """Return a serialisable copy of a profile definition."""
 
-    noise_type = raw_profile.get(CONF_PROFILE_TYPE, PROFILE_TYPES[0])
-    if noise_type not in PROFILE_TYPES:
-        noise_type = PROFILE_TYPES[0]
+    profile_type = raw_profile.get(CONF_PROFILE_TYPE)
+    profile_subtype = raw_profile.get(CONF_PROFILE_SUBTYPE)
+
+    if isinstance(profile_subtype, str):
+        profile_subtype = normalize_subtype(profile_subtype)
+
+    # Legacy values stored subtype directly in CONF_PROFILE_TYPE.
+    if profile_type not in PROFILE_TYPES:
+        if profile_type in COLOR_NOISE_SUBTYPES:
+            profile_subtype = profile_type
+            profile_type = "color_noise"
+        else:
+            profile_type = DEFAULT_PROFILE_TYPE
+
+    if profile_type == "color_noise":
+        if profile_subtype not in COLOR_NOISE_SUBTYPES:
+            profile_subtype = DEFAULT_PROFILE_SUBTYPE
+    else:
+        if profile_subtype not in TONAL_SUBTYPES:
+            profile_subtype = DEFAULT_TONAL_SUBTYPE
 
     parameters = dict(raw_profile.get(CONF_PROFILE_PARAMETERS, {}))
 
@@ -234,24 +268,150 @@ def coerce_profile(raw_profile: dict[str, Any]) -> dict[str, Any]:
     else:
         parameters[CONF_SEED] = seed
 
-    if noise_type == "custom":
-        slope = float(parameters.get(CONF_CUSTOM_SLOPE, DEFAULT_CUSTOM_SLOPE))
-        slope = _clamp(slope, CUSTOM_SLOPE_MIN, CUSTOM_SLOPE_MAX)
-        low = float(parameters.get(CONF_CUSTOM_LOW_CUTOFF, DEFAULT_CUSTOM_LOW_CUTOFF))
-        low = _clamp(low, CUSTOM_LOW_CUTOFF_MIN, CUSTOM_HIGH_CUTOFF_MAX)
-        high = float(parameters.get(CONF_CUSTOM_HIGH_CUTOFF, DEFAULT_CUSTOM_HIGH_CUTOFF))
-        high = _clamp(high, low + 1.0, CUSTOM_HIGH_CUTOFF_MAX)
-        if high <= low:
-            high = min(max(low + 50.0, CUSTOM_LOW_CUTOFF_MIN + 1.0), CUSTOM_HIGH_CUTOFF_MAX)
-        parameters[CONF_CUSTOM_SLOPE] = slope
-        parameters[CONF_CUSTOM_LOW_CUTOFF] = low
-        parameters[CONF_CUSTOM_HIGH_CUTOFF] = high
+    if profile_type == "color_noise":
+        if profile_subtype == "custom":
+            slope = float(parameters.get(CONF_CUSTOM_SLOPE, DEFAULT_CUSTOM_SLOPE))
+            slope = _clamp(slope, CUSTOM_SLOPE_MIN, CUSTOM_SLOPE_MAX)
+            low = float(parameters.get(CONF_CUSTOM_LOW_CUTOFF, DEFAULT_CUSTOM_LOW_CUTOFF))
+            low = _clamp(low, CUSTOM_LOW_CUTOFF_MIN, CUSTOM_HIGH_CUTOFF_MAX)
+            high = float(parameters.get(CONF_CUSTOM_HIGH_CUTOFF, DEFAULT_CUSTOM_HIGH_CUTOFF))
+            high = _clamp(high, low + 1.0, CUSTOM_HIGH_CUTOFF_MAX)
+            if high <= low:
+                high = min(max(low + 50.0, CUSTOM_LOW_CUTOFF_MIN + 1.0), CUSTOM_HIGH_CUTOFF_MAX)
+            parameters[CONF_CUSTOM_SLOPE] = slope
+            parameters[CONF_CUSTOM_LOW_CUTOFF] = low
+            parameters[CONF_CUSTOM_HIGH_CUTOFF] = high
+        else:
+            parameters.pop(CONF_CUSTOM_SLOPE, None)
+            parameters.pop(CONF_CUSTOM_LOW_CUTOFF, None)
+            parameters.pop(CONF_CUSTOM_HIGH_CUTOFF, None)
     else:
-        parameters.pop(CONF_CUSTOM_SLOPE, None)
-        parameters.pop(CONF_CUSTOM_LOW_CUTOFF, None)
-        parameters.pop(CONF_CUSTOM_HIGH_CUTOFF, None)
+        fallback = TONAL_PRESET_PARAMETERS.get(profile_subtype, {})
+        for key in (
+            CONF_TONAL_WAVEFORM,
+            CONF_TONAL_BASE_FREQUENCY,
+            CONF_TONAL_SECONDARY_RATIO,
+            CONF_TONAL_PULSE_DURATION,
+            CONF_TONAL_PAUSE_DURATION,
+            CONF_TONAL_ATTACK,
+            CONF_TONAL_DECAY,
+        ):
+            if key in parameters:
+                continue
+            if fallback:
+                parameters[key] = fallback.get(key)
 
     return {
-        CONF_PROFILE_TYPE: noise_type,
+        CONF_PROFILE_TYPE: profile_type,
+        CONF_PROFILE_SUBTYPE: profile_subtype,
         CONF_PROFILE_PARAMETERS: parameters,
     }
+
+
+class TonalGenerator:
+    """Generate deterministic tonal alarm-like audio."""
+
+    def __init__(
+        self,
+        subtype: str,
+        volume: float,
+        seed: Any | None = None,
+        *,
+        params: dict[str, Any] | None = None,
+    ) -> None:
+        if subtype not in TONAL_SUBTYPES:
+            raise UnknownNoiseTypeError(subtype)
+
+        self.subtype = subtype
+        self.volume = _clamp(float(volume), 0.0, 1.0)
+        self._rng = random.Random(seed)
+        merged = dict(TONAL_PRESET_PARAMETERS.get(subtype, {}))
+        if params:
+            merged.update(params)
+
+        waveform = merged.get(CONF_TONAL_WAVEFORM, TONAL_WAVEFORMS[0])
+        if waveform not in TONAL_WAVEFORMS:
+            waveform = TONAL_WAVEFORMS[0]
+        self.waveform = waveform
+        self.base_freq = max(20.0, float(merged.get(CONF_TONAL_BASE_FREQUENCY, 880.0)))
+        self.secondary_ratio = max(0.0, float(merged.get(CONF_TONAL_SECONDARY_RATIO, 0.0)))
+        self.pulse_samples = max(
+            1, int(float(merged.get(CONF_TONAL_PULSE_DURATION, 400.0)) / 1000 * SAMPLE_RATE)
+        )
+        self.pause_samples = max(
+            0, int(float(merged.get(CONF_TONAL_PAUSE_DURATION, 300.0)) / 1000 * SAMPLE_RATE)
+        )
+        self.attack_samples = max(
+            1, int(float(merged.get(CONF_TONAL_ATTACK, 10.0)) / 1000 * SAMPLE_RATE)
+        )
+        self.decay_samples = max(
+            1, int(float(merged.get(CONF_TONAL_DECAY, 150.0)) / 1000 * SAMPLE_RATE)
+        )
+        self._cycle_samples = self.pulse_samples + self.pause_samples
+        if self._cycle_samples <= 0:
+            self._cycle_samples = self.pulse_samples
+        self._position = 0
+        self._phase = 0.0
+        self._secondary_phase = 0.0
+
+    def _osc(self, phase: float, freq: float) -> float:
+        t = phase % 1.0
+        if self.waveform == "sine":
+            return math.sin(2 * math.pi * t)
+        if self.waveform == "square":
+            return 1.0 if t < 0.5 else -1.0
+        if self.waveform == "triangle":
+            return 4.0 * abs(t - 0.5) - 1.0
+        if self.waveform == "saw":
+            return 2.0 * (t - 0.5)
+        return math.sin(2 * math.pi * t)
+
+    def _next_sample(self) -> float:
+        if self._cycle_samples <= 0:
+            self._cycle_samples = 1
+
+        cycle_pos = self._position % self._cycle_samples
+        self._position = (self._position + 1) % self._cycle_samples
+
+        if cycle_pos >= self.pulse_samples:
+            return 0.0
+
+        freq = self.base_freq
+        self._phase += freq / SAMPLE_RATE
+        sample = self._osc(self._phase, freq)
+
+        if self.secondary_ratio > 0:
+            sec_freq = freq * self.secondary_ratio
+            self._secondary_phase += sec_freq / SAMPLE_RATE
+            sample = 0.6 * sample + 0.4 * self._osc(self._secondary_phase, sec_freq)
+
+        if cycle_pos < self.attack_samples:
+            sample *= cycle_pos / max(self.attack_samples, 1)
+        elif cycle_pos > self.pulse_samples - self.decay_samples:
+            tail = self.pulse_samples - cycle_pos
+            sample *= tail / max(self.decay_samples, 1)
+
+        return sample
+
+    def next_chunk(self, sample_count: int) -> bytes:
+        frames = bytearray()
+        for _ in range(sample_count):
+            frames.extend(struct.pack("<h", _normalise(self._next_sample() * self.volume)))
+        return bytes(frames)
+
+
+def create_generator(
+    profile_type: str,
+    subtype: str,
+    volume: float,
+    seed: Any | None,
+    params: dict[str, Any],
+) -> Any:
+    if profile_type == "color_noise":
+        custom_params = params if subtype == "custom" else None
+        return NoiseGenerator(subtype, volume, seed, custom_params=custom_params)
+    if profile_type == "tonal_noise":
+        if subtype != TONAL_CUSTOM:
+            params = TONAL_PRESET_PARAMETERS.get(subtype, {})
+        return TonalGenerator(subtype, volume, seed, params=params)
+    raise UnknownNoiseTypeError(profile_type)

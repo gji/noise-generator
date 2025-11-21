@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import sys
 from dataclasses import dataclass
@@ -30,14 +31,13 @@ from homeassistant.util import slugify
 from .const import (
     CONF_PROFILE_NAME,
     CONF_PROFILE_PARAMETERS,
+    CONF_PROFILE_SUBTYPE,
     CONF_PROFILE_TYPE,
     CONF_SEED,
     CONF_VOLUME,
-    CONF_CUSTOM_SLOPE,
-    CONF_CUSTOM_LOW_CUTOFF,
-    CONF_CUSTOM_HIGH_CUTOFF,
-    CUSTOM_HIGH_CUTOFF_MAX,
     DEFAULT_PROFILE_NAME,
+    DEFAULT_PROFILE_SUBTYPE,
+    DEFAULT_PROFILE_TYPE,
     DOMAIN,
     MEDIA_MIME_TYPE,
     SAMPLE_RATE,
@@ -200,34 +200,37 @@ class NoiseStreamManager:
     async def _launch_process(self, profile: NoiseStreamProfile) -> asyncio.subprocess.Process:
         """Launch the subprocess that produces streaming audio."""
 
-        params = profile.definition[CONF_PROFILE_PARAMETERS]
+        params = dict(profile.definition[CONF_PROFILE_PARAMETERS])
+        profile_type = profile.definition.get(CONF_PROFILE_TYPE, DEFAULT_PROFILE_TYPE)
+        profile_subtype = profile.definition.get(CONF_PROFILE_SUBTYPE, DEFAULT_PROFILE_SUBTYPE)
+        parameters_payload = json.dumps(params, separators=(",", ":"))
+        _LOGGER.debug(
+            "Launching profile slug=%s mode=%s subtype=%s params=%s",
+            profile.slug,
+            profile_type,
+            profile_subtype,
+            params,
+        )
         args = [
             sys.executable,
             "-m",
             "custom_components.noise_generator.noise_process",
-            "--type",
-            profile.definition[CONF_PROFILE_TYPE],
+            "--mode",
+            profile_type,
+            "--subtype",
+            profile_subtype,
             "--volume",
             str(params[CONF_VOLUME]),
             "--sample-rate",
             str(SAMPLE_RATE),
             "--chunk-duration",
             str(STREAM_CHUNK_DURATION),
+            "--parameters",
+            parameters_payload,
         ]
         seed = params.get(CONF_SEED)
         if seed is not None:
             args.extend(["--seed", str(seed)])
-        if profile.definition[CONF_PROFILE_TYPE] == "custom":
-            args.extend(
-                [
-                    "--custom-slope",
-                    str(params.get(CONF_CUSTOM_SLOPE, 0.0)),
-                    "--custom-low-cutoff",
-                    str(params.get(CONF_CUSTOM_LOW_CUTOFF, 20.0)),
-                    "--custom-high-cutoff",
-                    str(params.get(CONF_CUSTOM_HIGH_CUTOFF, CUSTOM_HIGH_CUTOFF_MAX)),
-                ]
-            )
 
         return await asyncio.create_subprocess_exec(
             *args,

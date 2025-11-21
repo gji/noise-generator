@@ -6,7 +6,7 @@
         "description": "Create the first noise profile.",
         "data": {
           "name": "Profile name",
-          "type": "Noise type",
+          "profile_subtype": "Noise variation",
           "volume": "Volume (0-1)",
           "seed": "Random seed"
         }
@@ -18,6 +18,19 @@
           "custom_slope": "Custom slope (dB/oct)",
           "custom_low_cutoff": "Custom low cutoff (Hz)",
           "custom_high_cutoff": "Custom high cutoff (Hz)"
+        }
+      }
+      "user_tonal": {
+        "title": "Tune custom tonal sound",
+        "description": "Shape the waveform, pitch, and envelope for your tonal profile.",
+        "data": {
+          "tonal_waveform": "Waveform",
+          "tonal_base_frequency": "Base frequency (Hz)",
+          "tonal_secondary_ratio": "Harmonic ratio",
+          "tonal_pulse_duration": "Pulse duration (ms)",
+          "tonal_pause_duration": "Pause duration (ms)",
+          "tonal_attack": "Attack time (ms)",
+          "tonal_decay": "Decay time (ms)"
         }
       }
     },
@@ -38,7 +51,7 @@
         "title": "Configure noise profile",
         "data": {
           "name": "Profile name",
-          "type": "Noise type",
+          "profile_subtype": "Noise variation",
           "volume": "Volume (0-1)",
           "seed": "Random seed"
         }
@@ -50,6 +63,19 @@
           "custom_slope": "Custom slope (dB/oct)",
           "custom_low_cutoff": "Custom low cutoff (Hz)",
           "custom_high_cutoff": "Custom high cutoff (Hz)"
+        }
+      },
+      "profile_tonal": {
+        "title": "Tune custom tonal sound",
+        "description": "Shape the waveform, pitch, and envelope for your tonal profile.",
+        "data": {
+          "tonal_waveform": "Waveform",
+          "tonal_base_frequency": "Base frequency (Hz)",
+          "tonal_secondary_ratio": "Harmonic ratio",
+          "tonal_pulse_duration": "Pulse duration (ms)",
+          "tonal_pause_duration": "Pause duration (ms)",
+          "tonal_attack": "Attack time (ms)",
+          "tonal_decay": "Decay time (ms)"
         }
       },
       "select_profile": {

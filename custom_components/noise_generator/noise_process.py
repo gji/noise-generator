@@ -3,23 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import json
+import logging
 import signal
 import sys
 from typing import Any
 
-from .const import (
-    CONF_CUSTOM_HIGH_CUTOFF,
-    CONF_CUSTOM_LOW_CUTOFF,
-    CONF_CUSTOM_SLOPE,
-    DEFAULT_CUSTOM_HIGH_CUTOFF,
-    DEFAULT_CUSTOM_LOW_CUTOFF,
-    DEFAULT_CUSTOM_SLOPE,
-    SAMPLE_RATE,
-    STREAM_CHUNK_DURATION,
-)
-from .noise import NoiseGenerator, build_wav_header
+from .const import PROFILE_TYPES, SAMPLE_RATE, STREAM_CHUNK_DURATION
+from .noise import create_generator, build_wav_header
 
 _STOP_REQUESTED = False
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+_LOGGER = logging.getLogger(__name__)
 
 
 def _handle_signal(_: int, __) -> None:
@@ -29,14 +24,13 @@ def _handle_signal(_: int, __) -> None:
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Noise generator streaming process")
-    parser.add_argument("--type", required=True, choices=["white", "pink", "brown", "custom"])
+    parser.add_argument("--mode", required=True, choices=PROFILE_TYPES)
+    parser.add_argument("--subtype", required=True)
     parser.add_argument("--volume", type=float, default=0.5)
     parser.add_argument("--seed", default=None)
     parser.add_argument("--sample-rate", type=int, default=SAMPLE_RATE)
     parser.add_argument("--chunk-duration", type=float, default=STREAM_CHUNK_DURATION)
-    parser.add_argument("--custom-slope", type=float, default=DEFAULT_CUSTOM_SLOPE)
-    parser.add_argument("--custom-low-cutoff", type=float, default=DEFAULT_CUSTOM_LOW_CUTOFF)
-    parser.add_argument("--custom-high-cutoff", type=float, default=DEFAULT_CUSTOM_HIGH_CUTOFF)
+    parser.add_argument("--parameters", default="{}")
     return parser.parse_args(argv)
 
 
@@ -53,18 +47,23 @@ def run(argv: list[str]) -> int:
     args = _parse_args(argv)
 
     chunk_samples = max(1, int(args.sample_rate * max(args.chunk_duration, 0.05)))
-    custom_params = None
-    if args.type == "custom":
-        custom_params = {
-            CONF_CUSTOM_SLOPE: args.custom_slope,
-            CONF_CUSTOM_LOW_CUTOFF: args.custom_low_cutoff,
-            CONF_CUSTOM_HIGH_CUTOFF: args.custom_high_cutoff,
-        }
-    generator = NoiseGenerator(
-        args.type,
+    try:
+        parameters = json.loads(args.parameters)
+    except json.JSONDecodeError:
+        parameters = {}
+    _LOGGER.info(
+        "Starting noise_process mode=%s subtype=%s volume=%s params=%s",
+        args.mode,
+        args.subtype,
+        args.volume,
+        parameters,
+    )
+    generator = create_generator(
+        args.mode,
+        args.subtype,
         args.volume,
         _coerce_seed(args.seed),
-        custom_params=custom_params,
+        parameters,
     )
 
     buffer = sys.stdout.buffer
@@ -78,6 +77,7 @@ def run(argv: list[str]) -> int:
     except BrokenPipeError:
         return 0
 
+    _LOGGER.info("Exiting noise_process mode=%s subtype=%s", args.mode, args.subtype)
     return 0
 
 
