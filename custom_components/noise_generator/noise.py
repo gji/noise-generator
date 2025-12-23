@@ -113,19 +113,33 @@ class NoiseGenerator:
                 low + 1.0,
                 CUSTOM_HIGH_CUTOFF_MAX,
             )
+            print(f"slope={slope}, low={low}, high={high}")
             if high <= low:
                 high = min(max(low + 50.0, CUSTOM_LOW_CUTOFF_MIN + 1.0), CUSTOM_HIGH_CUTOFF_MAX)
 
+            order = int(params.get("filter_order", 4))
+            order = max(1, min(order, 8))  # practical cap
+
             self._custom_state = {
                 "tilt": slope / max(abs(CUSTOM_SLOPE_MIN), CUSTOM_SLOPE_MAX),
+                "order": order,
+
                 "hp_alpha": _alpha_highpass(low),
-                "hp_prev": 0.0,
-                "hp_prev_input": 0.0,
                 "lp_alpha": _alpha_lowpass(high),
-                "lp_prev": 0.0,
+
+                # HP state (arrays)
+                "hp_prev": [0.0] * order,
+                "hp_prev_input": [0.0] * order,
+
+                # LP state (arrays)
+                "lp_prev": [0.0] * order,
+
+                # noise shaping
                 "prev_white": 0.0,
                 "brown": 0.0,
             }
+
+            print(self._custom_state)
 
     def _next_sample(self) -> float:
         if self.noise_type == "white":
@@ -164,38 +178,46 @@ class NoiseGenerator:
 
     def _next_custom_sample(self) -> float:
         assert self._custom_state is not None
+        s = self._custom_state
 
+        # ---- base noise ----
         white = self._rng.uniform(-1.0, 1.0)
-        # Derive brown-ish curve
-        brown = self._custom_state["brown"] + white * 0.02
+
+        brown = s["brown"] + white * 0.02
         brown = _clamp(brown, -1.0, 1.0)
-        self._custom_state["brown"] = brown * 0.98
+        s["brown"] = brown * 0.98
 
-        # Blue-ish component from differentiating white noise
-        prev_white = self._custom_state["prev_white"]
-        blue = _clamp(white - prev_white, -1.0, 1.0)
-        self._custom_state["prev_white"] = white
+        blue = _clamp(white - s["prev_white"], -1.0, 1.0)
+        s["prev_white"] = white
 
-        tilt = self._custom_state["tilt"]
+        tilt = s["tilt"]
         if tilt >= 0:
             shaped = (1.0 - tilt) * white + tilt * blue
         else:
             shaped = (1.0 + tilt) * white - tilt * brown
 
-        # High-pass filter
-        hp_alpha = self._custom_state["hp_alpha"]
-        hp_prev = self._custom_state["hp_prev"]
-        hp_prev_input = self._custom_state["hp_prev_input"]
-        high = hp_alpha * (hp_prev + shaped - hp_prev_input)
-        self._custom_state["hp_prev"] = _clamp(high, -1.5, 1.5)
-        self._custom_state["hp_prev_input"] = shaped
+        # ---- N-pole high-pass ----
+        x = shaped
+        a = s["hp_alpha"]
 
-        # Low-pass filter
-        lp_alpha = self._custom_state["lp_alpha"]
-        lp_prev = self._custom_state["lp_prev"]
-        band = lp_prev + lp_alpha * (_clamp(high, -1.5, 1.5) - lp_prev)
-        self._custom_state["lp_prev"] = band
-        return _clamp(band, -1.0, 1.0)
+        for i in range(s["order"]):
+            y = a * (s["hp_prev"][i] + x - s["hp_prev_input"][i])
+            s["hp_prev"][i] = y
+            s["hp_prev_input"][i] = x
+            x = y
+
+        hp = _clamp(x, -1.5, 1.5)
+
+        # ---- N-pole low-pass ----
+        x = hp
+        a = s["lp_alpha"]
+
+        for i in range(s["order"]):
+            y = s["lp_prev"][i] + a * (x - s["lp_prev"][i])
+            s["lp_prev"][i] = y
+            x = y
+
+        return _clamp(x, -1.0, 1.0)
 
     def next_chunk(self, sample_count: int) -> bytes:
         """Return the next PCM chunk for the configured noise profile."""
@@ -205,6 +227,13 @@ class NoiseGenerator:
             sample = self._next_sample() * self.volume
             frames.extend(struct.pack("<h", _normalise(sample)))
         return bytes(frames)
+
+    def next_chunk_raw(self, sample_count: int) -> list[int]:
+        out = []
+        for _ in range(sample_count):
+            out.append(_normalise(self._next_sample() * self.volume))
+        return out
+
 
 
 def build_wav_header(sample_rate: int = SAMPLE_RATE) -> bytes:
@@ -398,7 +427,6 @@ class TonalGenerator:
         for _ in range(sample_count):
             frames.extend(struct.pack("<h", _normalise(self._next_sample() * self.volume)))
         return bytes(frames)
-
 
 def create_generator(
     profile_type: str,
